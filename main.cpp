@@ -12,12 +12,14 @@ int navail, nprocesses;
 Room *room;
 
 void sig_chld(int signo);
-Signal(SIGCHLD, sig_chld);
 int i, maxfd;
 void thread_make(int);
 void process_make(int, int);
 
 int main(int argc, char **argv) {
+  // 注册信号处理函数
+  Signal(SIGCHLD, sig_chld);
+
   // 文件描述符集合
   fd_set rset, masterset;
   FD_ZERO(&masterset);  // 清空集合
