@@ -14,7 +14,7 @@ Room *room;
 void sig_chld(int signo);
 int i, maxfd;
 void thread_make(int);
-void process_make(int, int);
+int process_make(int, int);
 
 int main(int argc, char **argv) {
   // 注册信号处理函数
@@ -129,7 +129,7 @@ void thread_make(int i) {
 /// @param i 进程号
 /// @param listenfd
 /// @return
-void process_make(int i, int listenfd) {
+int process_make(int i, int listenfd) {
   pid_t pid;
   void process_main(int, int);
 
