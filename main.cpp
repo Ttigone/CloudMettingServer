@@ -129,7 +129,7 @@ void thread_make(int i) {
 /// @param i 进程号
 /// @param listenfd
 /// @return
-int process_make(int i, int listenfd) {
+void process_make(int i, int listenfd) {
   pid_t pid;
   void process_main(int, int);
 
