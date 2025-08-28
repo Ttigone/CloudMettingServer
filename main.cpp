@@ -154,17 +154,6 @@ int process_make(int i, int listenfd) {
     Close(listenfd);             // child not need this open
     Close(sockfd[0]);            // 关闭读端
     process_main(i, sockfd[1]);  // 执行子进程的主逻辑, 永远不会返回, 执行写端
+    return 0;
   }
 }
-
-// typedef struct Room_Pool
-//{
-//     Room *room_pool[100]; //pool
-//     int num;
-
-//    Room_Pool()
-//    {
-//        memset(room_pool, 0, sizeof(room_pool));
-//        num = 0;
-//    }
-//}Room_Pool;

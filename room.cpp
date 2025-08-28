@@ -1,8 +1,11 @@
+#include <iomanip>
+#include <iostream>
 #include <map>
 
 #include "msg.h"
 #include "unp.h"
 #include "unpthread.h"
+
 #define SENDTHREADSIZE 5
 SEND_QUEUE sendqueue;  // save data
 
@@ -93,70 +96,83 @@ void process_main(int i, int fd) {
         char head[15] = {0};           // 头部存储 11 字节
         int ret = Readn(i, head, 11);  // 消息头 11 字节
         if (ret <= 0) {
-          printf("peer close\n");
+          printf("peer close or read error\n");
           fdclose(i, fd);
-        } else if (ret == 11) {
+        } else if (ret != 11) {
+          err_msg("incomplete message header, expected 11 bytes, got %d", ret);
+          //   fdclose(i, fd);
+        } else {
           // 验证消息开始标记
-          if (head[0] == '$') {
-            MSG_TYPE msgtype;
-            // 解析消息类型(2字节) 最大支持 255 中消息类型
-            memcpy(&msgtype, head + 1, 2);
-            msgtype = (MSG_TYPE)ntohs(msgtype);
-            MSG msg;
-            // 拷贝消息
-            memset(&msg, 0, sizeof(MSG));
-            msg.targetfd = i;
-            // 拷贝 ip(4字节)
-            memcpy(&msg.ip, head + 3, 4);
-            int msglen;
-            // 解析数据长度(4字节)
-            memcpy(&msglen, head + 7, 4);
-            //
-            msg.len = ntohl(msglen);
+          if (head[0] != '$') {
+            err_msg("invalid message start marker: 0x%02x",
+                    (unsigned char)head[0]);
+            // printf("head error %d\n", head[0]);
+            for (size_t i = 0; i < 15; i++) {
+              std::cout << "Byte[" << i << "]: 0x" << std::hex << std::setw(2)
+                        << std::setfill('0') << static_cast<int>(head[i])
+                        << " ";
+            }
+            fdclose(i, fd);  // 关闭连接
+            break;
+          }
+          MSG_TYPE msgtype;
+          // 解析消息类型(2字节) 最大支持 255 中消息类型
+          memcpy(&msgtype, head + 1, 2);
+          msgtype = (MSG_TYPE)ntohs(msgtype);
+          if (msgtype < IMG_SEND || msgtype > PARTNER_JOIN2) {
+            err_msg("invalid message type: %d", msgtype);
+            fdclose(i, fd);
+            break;
+          }
+          MSG msg;
+          // 拷贝消息
+          memset(&msg, 0, sizeof(MSG));
+          msg.targetfd = i;
+          // 拷贝 ip(4字节)
+          memcpy(&msg.ip, head + 3, 4);
+          int msglen;
+          // 解析数据长度(4字节)
+          memcpy(&msglen, head + 7, 4);
+          //
+          msg.len = ntohl(msglen);
 
-            // 处理发送类型
-            if (msgtype == IMG_SEND || msgtype == AUDIO_SEND ||
-                msgtype == TEXT_SEND) {
-              // 图片发送转化成图片接收
-              // 音频发送转化成音频接收
-              // 文本发送转化成文本接收
-              msg.msgType =
-                  (msgtype == IMG_SEND)
-                      ? IMG_RECV
-                      : ((msgtype == AUDIO_SEND) ? AUDIO_RECV : TEXT_RECV);
-              msg.ptr = (char *)malloc(msg.len);  // 分配内存读取数据
-              msg.ip = user_pool->fdToIp[i];      // 获取发送者 ip
+          // 处理发送类型
+          if (msgtype == IMG_SEND || msgtype == AUDIO_SEND ||
+              msgtype == TEXT_SEND) {
+            // 图片发送转化成图片接收
+            // 音频发送转化成音频接收
+            // 文本发送转化成文本接收
+            msg.msgType =
+                (msgtype == IMG_SEND)
+                    ? IMG_RECV
+                    : ((msgtype == AUDIO_SEND) ? AUDIO_RECV : TEXT_RECV);
+            msg.ptr = (char *)malloc(msg.len);  // 分配内存读取数据
+            msg.ip = user_pool->fdToIp[i];      // 获取发送者 ip
 
-              // 读取实际数据
-              if ((ret = Readn(i, msg.ptr, msg.len)) < msg.len) {
-                err_msg("3 msg format error");
-              } else {
-                int tail;
-                Readn(i, &tail, 1);
-                if (tail != '#') {
-                  err_msg("4 msg format error");
-                } else {
-                  // 加入发送队列
-                  sendqueue.push_msg(msg);
-                }
-              }
-            } else if (msgtype == CLOSE_CAMERA) {
-              // 关闭摄像头
-              char tail;
+            // 读取实际数据
+            if ((ret = Readn(i, msg.ptr, msg.len)) < msg.len) {
+              err_msg("3 msg format error");
+            } else {
+              int tail;
               Readn(i, &tail, 1);
-              if (tail == '#' && msg.len == 0) {
-                msg.msgType = CLOSE_CAMERA;
-                sendqueue.push_msg(msg);
+              if (tail != '#') {
+                err_msg("4 msg format error");
               } else {
-                err_msg("camera data error ");
+                // 加入发送队列
+                sendqueue.push_msg(msg);
               }
             }
-          } else {
-            printf("head error %s\n", head);
-            err_msg("1 msg format error");
+          } else if (msgtype == CLOSE_CAMERA) {
+            // 关闭摄像头
+            char tail;
+            Readn(i, &tail, 1);
+            if (tail == '#' && msg.len == 0) {
+              msg.msgType = CLOSE_CAMERA;
+              sendqueue.push_msg(msg);
+            } else {
+              err_msg("camera data error ");
+            }
           }
-        } else {
-          err_msg("2 msg format error");
         }
         if (--nsel <= 0) break;
       }
@@ -164,10 +180,8 @@ void process_main(int i, int fd) {
   }
 }
 
-// file description close
 void fdclose(int fd, int pipefd) {
-  if (user_pool->owner == fd)  // room close
-  {
+  if (user_pool->owner == fd) {
     // room close
     user_pool->clear_room();
     printf("clear room\n");
